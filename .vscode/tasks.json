@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build algorithm",
+      "type": "shell",
+      "command": "g++",
+      "args": [
+        "-Wall", "-std=c++20",
+        "-I/opt/homebrew/opt/gmp/include",
+        "-L/opt/homebrew/opt/gmp/lib",
+        "-I/opt/homebrew/Cellar/utf8cpp/4.0.7/include",
+        "-lgmp", "-lgmpxx"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}
