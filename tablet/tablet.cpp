@@ -269,6 +269,9 @@ void menu_tablet() {
 extern "C" {
     void tabletEncrypt(const string& inputPath, const string& outputPath) {
         try {
+            // Запрашиваем пароль для защиты файла
+            string password = Password();
+            
             // Генерируем ключи случайно
             vector<int> col_key = generateRandomKey(TABLET_BLOCK_DIM);
             vector<int> row_key = generateRandomKey(TABLET_BLOCK_DIM);
@@ -281,13 +284,19 @@ extern "C" {
             for (int k : row_key) cout << k << " ";
             cout << endl;
 
-            // Сохраняем ключи в отдельный файл
+            // Сохраняем ключи и пароль в отдельный файл
             string keyFile = outputPath + ".keys";
             ofstream out(keyFile, ios::binary);
             if (!out.is_open()) {
                 cerr << "Ошибка при открытии файла ключей для записи" << endl;
                 return;
             }
+
+            // Записываем хеш пароля
+            string passHash = hashPassword(password);
+            size_t passLen = passHash.length();
+            out.write((char*)&passLen, sizeof(passLen));
+            out.write(passHash.c_str(), passLen);
 
             // Записываем размерность (8)
             unsigned char dim = TABLET_BLOCK_DIM;
@@ -315,16 +324,40 @@ extern "C" {
             // Записываем выходной файл
             writeFileBinary(outputPath, encryptedBytes);
             
-            cout << "✓ Файл зашифрован: " << outputPath << endl;
-            cout << "✓ Ключи сохранены в: " << keyFile << endl;
+            cout << "✓ Файл зашифрован!\n";
         } catch (const exception& e) {
             cerr << "Ошибка при шифровании: " << e.what() << endl;
+            remove(outputPath.c_str());
         }
     }
 
     void tabletDecrypt(const string& inputPath, const string& outputPath) {
         try {
-            // Запрашиваем ключи у пользователя
+            // Проверяем пароль перед расшифровкой
+            string keyFile = inputPath + ".keys";
+            ifstream keyStream(keyFile, ios::binary);
+            if (!keyStream.is_open()) {
+                cerr << "Ошибка: не найден файл ключей " << keyFile << endl;
+                return;
+            }
+
+            // Читаем хеш пароля
+            size_t passLen;
+            keyStream.read((char*)&passLen, sizeof(passLen));
+            string storedHash(passLen, '\0');
+            keyStream.read(&storedHash[0], passLen);
+
+            cout << "Введите пароль для файла: ";
+            string password;
+            getline(cin, password);
+
+            if (!verifyPassword(password, storedHash)) {
+                cerr << "Ошибка: неверный пароль!\n";
+                keyStream.close();
+                return;
+            }
+
+            // Запрашиваем ключи у пользователя (или читаем из файла)
             vector<int> col_key, row_key;
 
             cout << "Введите ключ для столбцов (индексы 0 до " << (TABLET_BLOCK_DIM - 1) << ", завершите -1):\n";
@@ -342,8 +375,11 @@ extern "C" {
 
             if (col_key.size() != TABLET_BLOCK_DIM || row_key.size() != TABLET_BLOCK_DIM) {
                 cerr << "Ошибка: размер ключей должен быть " << TABLET_BLOCK_DIM << endl;
+                keyStream.close();
                 return;
             }
+
+            keyStream.close();
 
             // Читаем входной файл
             vector<unsigned char> fileBytes = readFileBinary(inputPath);
@@ -354,9 +390,10 @@ extern "C" {
             // Записываем выходной файл
             writeFileBinary(outputPath, decryptedBytes);
             
-            cout << "✓ Файл расшифрован: " << outputPath << endl;
+            cout << "✓ Файл расшифрован!\n";
         } catch (const exception& e) {
             cerr << "Ошибка при дешифровании: " << e.what() << endl;
+            remove(outputPath.c_str());
         }
     }
 }

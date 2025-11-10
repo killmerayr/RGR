@@ -159,6 +159,9 @@ void menu_tarabar() {
 extern "C" {
     void tarabarEncrypt(const string& inputPath, const string& outputPath) {
         try {
+            // Запрашиваем пароль для защиты файла
+            string password = Password();
+            
             // Читаем входной файл
             vector<unsigned char> fileBytes = readFileBinary(inputPath);
             
@@ -168,14 +171,45 @@ extern "C" {
             // Записываем выходной файл
             writeFileBinary(outputPath, encryptedBytes);
             
-            cout << "Файл зашифрован: " << outputPath << endl;
+            // Сохраняем хеш пароля в метаданные
+            string metaFile = outputPath + ".tarabar";
+            ofstream meta(metaFile);
+            if (!meta.is_open()) {
+                cerr << "Ошибка при сохранении пароля" << endl;
+                return;
+            }
+            meta << hashPassword(password);
+            meta.close();
+            
+            cout << "✓ Файл зашифрован!\n";
         } catch (const exception& e) {
             cerr << "Ошибка при шифровании: " << e.what() << endl;
+            remove(outputPath.c_str());
         }
     }
 
     void tarabarDecrypt(const string& inputPath, const string& outputPath) {
         try {
+            // Проверяем пароль перед расшифровкой
+            string metaFile = inputPath + ".tarabar";
+            ifstream meta(metaFile);
+            if (!meta.is_open()) {
+                cerr << "Ошибка: не найден файл с паролем " << metaFile << endl;
+                return;
+            }
+            string storedHash;
+            getline(meta, storedHash);
+            meta.close();
+
+            cout << "Введите пароль для файла: ";
+            string password;
+            getline(cin, password);
+
+            if (!verifyPassword(password, storedHash)) {
+                cerr << "Ошибка: неверный пароль!\n";
+                return;
+            }
+
             // Читаем входной файл
             vector<unsigned char> fileBytes = readFileBinary(inputPath);
             
@@ -185,9 +219,10 @@ extern "C" {
             // Записываем выходной файл
             writeFileBinary(outputPath, decryptedBytes);
             
-            cout << "Файл расшифрован: " << outputPath << endl;
+            cout << "✓ Файл расшифрован!\n";
         } catch (const exception& e) {
             cerr << "Ошибка при дешифровании: " << e.what() << endl;
+            remove(outputPath.c_str());
         }
     }
 }

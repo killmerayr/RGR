@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 
-// Проверка корректности кодового слова (только ASCII буквы)
+// Проверка корректности кодового слова (буквы ASCII или кириллица)
 bool isValidCodeWord(const std::vector<unsigned char>& codeWord);
 
 // Шифрование текста
