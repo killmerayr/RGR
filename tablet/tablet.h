@@ -1,26 +1,32 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <utility>
 
-// Формирование блока
-std::vector<unsigned char> MakeBlock(const std::string& content, size_t start, size_t blocksize);
+// Константы для размера блока
+static constexpr size_t TABLET_BLOCK_SIZE = 64;  // 8x8
+static constexpr size_t TABLET_BLOCK_DIM = 8;    // Размерность матрицы
 
-// Перемешивание блока
-std::vector<unsigned char> Shuffle(const std::vector<unsigned char>& block, const std::vector<int>& col_key, const std::vector<int>& row_key);
+// Шифрование табличной перестановкой
+std::vector<unsigned char> Encrypt(const std::vector<unsigned char>& text, 
+                                  size_t block_size, 
+                                  const std::vector<int>& col_key, 
+                                  const std::vector<int>& row_key);
 
+// Дешифрование табличной перестановкой
+std::vector<unsigned char> Decrypt(const std::vector<unsigned char>& encrypted, 
+                                  size_t block_size, 
+                                  const std::vector<int>& col_key, 
+                                  const std::vector<int>& row_key);
 
-std::pair<std::vector<int>, std::vector<int>> ExpandWithRandom(size_t n, const std::vector<int>& col_key, const std::vector<int>& row_key);
+// Генерирование случайных ключей
+std::vector<int> generateRandomKey(size_t size);
 
-// Шифрование UTF-8 (по символам)
-std::vector<uint32_t> Encrypt(const std::vector<uint32_t>& text, size_t block_size, const std::vector<int>& col_key, const std::vector<int>& row_key);
-
-// Обратное перемешивание UTF-8
-std::vector<uint32_t> Unshuffle(const std::vector<uint32_t>& block, const std::vector<int>& col_key, const std::vector<int>& row_key);
-
-// Дешифрование UTF-8
-std::vector<uint32_t> Decrypt(const std::vector<uint32_t>& encrypted, size_t block_size, const std::vector<int>& col_key, const std::vector<int>& row_key);
-
-// Терминальный ввод
+// Пользовательский интерфейс
 void process_terminal_tablet(bool encrypt);
 void menu_tablet();
+
+// C-style API для динамической загрузки
+extern "C" {
+    void tabletEncrypt(const std::string& inputPath, const std::string& outputPath);
+    void tabletDecrypt(const std::string& inputPath, const std::string& outputPath);
+}

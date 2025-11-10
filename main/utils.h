@@ -1,14 +1,19 @@
 #pragma once
 #include <string>
-#include<vector>
-bool isAlpha(uint32_t cp);
+#include <vector>
 
-// Чтение файла в строку
+// Проверка символа на ASCII букву
+bool isAsciiLetter(unsigned char c);
+
+// Чтение бинарного файла
+std::vector<unsigned char> readFileBinary(const std::string& filename);
+
+// Запись бинарного файла
+void writeFileBinary(const std::string& filename, const std::vector<unsigned char>& buffer);
+
+// Обратная совместимость для текстовых файлов
 std::string readFile(const std::string& filename);
-
-// Запись строки в файл
 void writeFile(const std::string& filename, const std::string& content);
 
+// Ввод пароля
 std::string Password();
-
-void writeFileBinary(const std::string& filename, const std::vector<unsigned char>& buffer);

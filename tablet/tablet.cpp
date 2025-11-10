@@ -5,51 +5,60 @@
 #include <string>
 #include <stdexcept>
 #include <fstream>
-#include <random>
-#include <algorithm>
 #include <cmath>
 #include <limits>
-
-#include "utf8cpp/utf8.h"
+#include <random>
+#include <algorithm>
 
 using namespace std;
 
-// Запись бинарного файла UTF-8 из vector<uint32_t>
-void writeFileBinary(const string& filename, const vector<uint32_t>& buffer) {
-    ofstream out(filename, ios::binary);
-    if (!out.is_open()) throw runtime_error("Не удалось открыть файл для записи: " + filename);
-    string encoded;
-    utf8::utf32to8(buffer.begin(), buffer.end(), back_inserter(encoded));
-    out.write(encoded.data(), encoded.size());
-    out.close();
+// Генерирование случайных ключей
+vector<int> generateRandomKey(size_t size) {
+    vector<int> key(size);
+    for (size_t i = 0; i < size; ++i) {
+        key[i] = i;
+    }
+    
+    // Перетасовываем ключ
+    random_device rd;
+    mt19937 g(rd());
+    shuffle(key.begin(), key.end(), g);
+    
+    return key;
 }
 
-// Создание блока
-vector<uint32_t> MakeBlock(const vector<uint32_t>& content, size_t start, size_t blocksize){
-    vector<uint32_t> block(blocksize, 0);
-    for (size_t i = 0; i < blocksize && start + i < content.size(); i++){
+// Создание блока из данных
+vector<unsigned char> MakeBlock(const vector<unsigned char>& content, size_t start, size_t blocksize) {
+    vector<unsigned char> block(blocksize, 0);
+    for (size_t i = 0; i < blocksize && start + i < content.size(); ++i) {
         block[i] = content[start + i];
     }
     return block;
 }
 
-// Перемешивание блока
-vector<uint32_t> Shuffle(const vector<uint32_t>& block, const vector<int>& col_key, const vector<int>& row_key) {
+// Перемешивание блока согласно ключам строк и столбцов
+vector<unsigned char> Shuffle(const vector<unsigned char>& block, 
+                             const vector<int>& col_key, 
+                             const vector<int>& row_key) {
     size_t n = static_cast<size_t>(sqrt(block.size()));
-    vector<uint32_t> temp = block;
-    vector<uint32_t> new_block(block.size());
+    vector<unsigned char> temp = block;
+    vector<unsigned char> new_block(block.size());
 
+    // Перестановка по столбцам
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = 0; j < n; ++j) {
-            if (i * n + j < block.size() && i * n + col_key[j] < block.size())
+            if (i * n + j < block.size() && i * n + col_key[j] < block.size()) {
                 temp[i * n + col_key[j]] = block[i * n + j];
+            }
         }
     }
 
+    // Перестановка по строкам
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = 0; j < n; ++j) {
-            if (row_key[i] * n + j < block.size() && i * n + j < block.size())
+            if (row_key[i] * n + j < block.size() && i * n + j < block.size()) {
                 new_block[row_key[i] * n + j] = temp[i * n + j];
+            }
         }
     }
 
@@ -57,119 +66,297 @@ vector<uint32_t> Shuffle(const vector<uint32_t>& block, const vector<int>& col_k
 }
 
 // Обратное перемешивание
-vector<uint32_t> Unshuffle(const vector<uint32_t>& block, const vector<int>& col_key, const vector<int>& row_key) {
+vector<unsigned char> Unshuffle(const vector<unsigned char>& block, 
+                               const vector<int>& col_key, 
+                               const vector<int>& row_key) {
     size_t n = static_cast<size_t>(sqrt(block.size()));
-    vector<uint32_t> temp(block.size());
-    vector<uint32_t> new_block(block.size());
+    vector<unsigned char> temp(block.size());
+    vector<unsigned char> new_block(block.size());
 
+    // Обратная перестановка по строкам
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = 0; j < n; ++j) {
-            if (row_key[i] * n + j < block.size() && i * n + j < block.size())
+            if (row_key[i] * n + j < block.size() && i * n + j < block.size()) {
                 temp[i * n + j] = block[row_key[i] * n + j];
+            }
         }
     }
 
+    // Обратная перестановка по столбцам
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = 0; j < n; ++j) {
-            if (i * n + col_key[j] < block.size() && i * n + j < block.size())
+            if (i * n + col_key[j] < block.size() && i * n + j < block.size()) {
                 new_block[i * n + j] = temp[i * n + col_key[j]];
+            }
         }
     }
 
     return new_block;
 }
 
-// Шифрование
-vector<uint32_t> Encrypt(const vector<uint32_t>& text, size_t block_size, const vector<int>& col_key, const vector<int>& row_key){
-    vector<uint32_t> result;
-    for(size_t start = 0; start < text.size(); start += block_size){
-        vector<uint32_t> block = MakeBlock(text, start, block_size);
-        vector<uint32_t> shuffled = Shuffle(block, col_key, row_key);
+// Шифрование с табличной перестановкой
+vector<unsigned char> Encrypt(const vector<unsigned char>& text, 
+                             size_t block_size, 
+                             const vector<int>& col_key, 
+                             const vector<int>& row_key) {
+    vector<unsigned char> result;
+    for (size_t start = 0; start < text.size(); start += block_size) {
+        vector<unsigned char> block = MakeBlock(text, start, block_size);
+        vector<unsigned char> shuffled = Shuffle(block, col_key, row_key);
         result.insert(result.end(), shuffled.begin(), shuffled.end());
     }
     return result;
 }
 
-// Дешифрование
-vector<uint32_t> Decrypt(const vector<uint32_t>& encrypted, size_t block_size, const vector<int>& col_key, const vector<int>& row_key){
-    vector<uint32_t> result;
-    for (size_t start = 0; start < encrypted.size(); start += block_size){
+// Дешифрование с табличной перестановкой
+vector<unsigned char> Decrypt(const vector<unsigned char>& encrypted, 
+                             size_t block_size, 
+                             const vector<int>& col_key, 
+                             const vector<int>& row_key) {
+    vector<unsigned char> result;
+    for (size_t start = 0; start < encrypted.size(); start += block_size) {
         size_t current_block_size = min(block_size, encrypted.size() - start);
-        vector<uint32_t> block(current_block_size, 0);
-        for(size_t i = 0; i < current_block_size; ++i){
+        vector<unsigned char> block(current_block_size, 0);
+        for (size_t i = 0; i < current_block_size; ++i) {
             block[i] = encrypted[start + i];
         }
-        vector<uint32_t> unshuffled = Unshuffle(block, col_key, row_key);
+        vector<unsigned char> unshuffled = Unshuffle(block, col_key, row_key);
         result.insert(result.end(), unshuffled.begin(), unshuffled.end());
     }
     return result;
 }
 
-// Меню и терминальный ввод
-void process_terminal_tablet(bool encrypt) {
+// Обработка ввода из терминала
+void process_terminal_tablet(bool encrypt_flag) {
     size_t block_size;
-    cout << "Введите размер блока: ";
+    cout << "Введите размер блока (квадратный корень должен быть целым): ";
     cin >> block_size;
     cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
     vector<int> col_key, row_key;
+    size_t n = static_cast<size_t>(sqrt(block_size));
+
+    cout << "Введите ключ для столбцов (индексы 0 до " << (n - 1) << ", завершите -1):\n";
     int k;
-    cout << "Введите ключ для столбцов (через пробел, завершите 0): ";
-    while (cin >> k && k != 0) col_key.push_back(k);
-    cin.ignore(numeric_limits<streamsize>::max(), '\n');
-
-    cout << "Введите ключ для строк (через пробел, завершите 0): ";
-    while (cin >> k && k != 0) row_key.push_back(k);
-    cin.ignore(numeric_limits<streamsize>::max(), '\n');
-
-    cout << "Выберите способ работы:\n1 - Через терминал\n2 - Через файл\nВаш выбор: ";
-    int mode;
-    cin >> mode;
-    cin.ignore(numeric_limits<streamsize>::max(), '\n');
-
-    if(mode == 1) {
-        cout << "Введите текст: ";
-        string input;
-        getline(cin, input);
-        vector<uint32_t> text_utf32;
-        utf8::utf8to32(input.begin(), input.end(), back_inserter(text_utf32));
-
-        vector<uint32_t> result = encrypt ? Encrypt(text_utf32, block_size, col_key, row_key)
-                                         : Decrypt(text_utf32, block_size, col_key, row_key);
-
-        string output;
-        utf8::utf32to8(result.begin(), result.end(), back_inserter(output));
-        cout << (encrypt ? "Зашифрованный" : "Дешифрованный") << " текст:\n" << output << endl;
-
-    } else {
-        cout << "Введите имя входного файла: ";
-        string inFile;
-        getline(cin, inFile);
-        string text = readFile(inFile);
-        vector<uint32_t> text_utf32;
-        utf8::utf8to32(text.begin(), text.end(), back_inserter(text_utf32));
-
-        vector<uint32_t> result = encrypt ? Encrypt(text_utf32, block_size, col_key, row_key)
-                                         : Decrypt(text_utf32, block_size, col_key, row_key);
-
-        cout << "Введите имя выходного файла: ";
-        string outFile;
-        getline(cin, outFile);
-        writeFileBinary(outFile + (encrypt ? "_enc" : "_dec"), result);
-        cout << "Готово!" << endl;
+    while (cin >> k && k != -1) {
+        col_key.push_back(k);
     }
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+    cout << "Введите ключ для строк (индексы 0 до " << (n - 1) << ", завершите -1):\n";
+    while (cin >> k && k != -1) {
+        row_key.push_back(k);
+    }
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+    if (col_key.size() != n || row_key.size() != n) {
+        cerr << "Ошибка: размер ключей должен быть " << n << endl;
+        return;
+    }
+
+    cout << "Введите текст: ";
+    string input;
+    getline(cin, input);
+    vector<unsigned char> text_bytes(input.begin(), input.end());
+
+    vector<unsigned char> result = encrypt_flag ? 
+        Encrypt(text_bytes, block_size, col_key, row_key) :
+        Decrypt(text_bytes, block_size, col_key, row_key);
+
+    string output(result.begin(), result.end());
+    cout << (encrypt_flag ? "Зашифрованный" : "Дешифрованный") << " текст:\n" << output << endl;
 }
 
+// Меню
 void menu_tablet() {
-    while(true) {
-        cout << "\nТабличный шифр:\n1 - Шифровать\n2 - Дешифровать\n0 - Назад\nВаш выбор: ";
+    while (true) {
+        cout << "\nТабличный шифр:\n"
+             << "1 - Шифровать\n"
+             << "2 - Дешифровать\n"
+             << "0 - Назад\n"
+             << "Ваш выбор: ";
         int choice;
         cin >> choice;
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-        if(choice == 0) break;
-        if(choice < 1 || choice > 2) { cerr << "Некорректный выбор!\n"; continue; }
-        bool encrypt = choice == 1;
-        process_terminal_tablet(encrypt);
+        if (choice == 0) break;
+        if (choice < 1 || choice > 2) {
+            cerr << "Некорректный выбор!\n";
+            continue;
+        }
+
+        bool encrypt_flag = (choice == 1);
+        
+        cout << "Выберите способ работы:\n"
+             << "1 - Через терминал\n"
+             << "2 - Через файл\n"
+             << "0 - Назад\n"
+             << "Ваш выбор: ";
+        int mode;
+        cin >> mode;
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+        if (mode == 0) continue;
+        if (mode < 1 || mode > 2) {
+            cerr << "Некорректный выбор!\n";
+            continue;
+        }
+
+        try {
+            size_t block_size;
+            cout << "Введите размер блока (квадратный корень должен быть целым): ";
+            cin >> block_size;
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            vector<int> col_key, row_key;
+            size_t n = static_cast<size_t>(sqrt(block_size));
+
+            cout << "Введите ключ для столбцов (индексы 0 до " << (n - 1) << ", завершите -1):\n";
+            int k;
+            while (cin >> k && k != -1) {
+                col_key.push_back(k);
+            }
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            cout << "Введите ключ для строк (индексы 0 до " << (n - 1) << ", завершите -1):\n";
+            while (cin >> k && k != -1) {
+                row_key.push_back(k);
+            }
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            if (col_key.size() != n || row_key.size() != n) {
+                cerr << "Ошибка: размер ключей должен быть " << n << endl;
+                continue;
+            }
+
+            if (mode == 1) {
+                cout << "Введите текст: ";
+                string text;
+                getline(cin, text);
+                vector<unsigned char> text_bytes(text.begin(), text.end());
+
+                vector<unsigned char> result = encrypt_flag ? 
+                    Encrypt(text_bytes, block_size, col_key, row_key) :
+                    Decrypt(text_bytes, block_size, col_key, row_key);
+
+                string output(result.begin(), result.end());
+                cout << (encrypt_flag ? "Зашифрованный" : "Дешифрованный") << " текст:\n" << output << endl;
+            } else {
+                cout << "Введите имя входного файла: ";
+                string inFile;
+                getline(cin, inFile);
+                
+                cout << "Введите имя выходного файла: ";
+                string outFile;
+                getline(cin, outFile);
+
+                vector<unsigned char> file_bytes = readFileBinary(inFile);
+                vector<unsigned char> result = encrypt_flag ? 
+                    Encrypt(file_bytes, block_size, col_key, row_key) :
+                    Decrypt(file_bytes, block_size, col_key, row_key);
+
+                string output_path = outFile + (encrypt_flag ? "_enc" : "_dec");
+                writeFileBinary(output_path, result);
+                cout << "Готово!\n";
+            }
+        } catch (const exception& e) {
+            cerr << "Ошибка: " << e.what() << endl;
+        }
+    }
+}
+
+// C-style API для динамической загрузки
+extern "C" {
+    void tabletEncrypt(const string& inputPath, const string& outputPath) {
+        try {
+            // Генерируем ключи случайно
+            vector<int> col_key = generateRandomKey(TABLET_BLOCK_DIM);
+            vector<int> row_key = generateRandomKey(TABLET_BLOCK_DIM);
+
+            cout << "Ключ столбцов: ";
+            for (int k : col_key) cout << k << " ";
+            cout << endl;
+
+            cout << "Ключ строк: ";
+            for (int k : row_key) cout << k << " ";
+            cout << endl;
+
+            // Сохраняем ключи в отдельный файл
+            string keyFile = outputPath + ".keys";
+            ofstream out(keyFile, ios::binary);
+            if (!out.is_open()) {
+                cerr << "Ошибка при открытии файла ключей для записи" << endl;
+                return;
+            }
+
+            // Записываем размерность (8)
+            unsigned char dim = TABLET_BLOCK_DIM;
+            out.write((char*)&dim, sizeof(dim));
+
+            // Записываем ключи столбцов
+            for (int k : col_key) {
+                unsigned char byte = k;
+                out.write((char*)&byte, sizeof(byte));
+            }
+
+            // Записываем ключи строк
+            for (int k : row_key) {
+                unsigned char byte = k;
+                out.write((char*)&byte, sizeof(byte));
+            }
+            out.close();
+
+            // Читаем входной файл
+            vector<unsigned char> fileBytes = readFileBinary(inputPath);
+            
+            // Шифруем
+            vector<unsigned char> encryptedBytes = Encrypt(fileBytes, TABLET_BLOCK_SIZE, col_key, row_key);
+            
+            // Записываем выходной файл
+            writeFileBinary(outputPath, encryptedBytes);
+            
+            cout << "✓ Файл зашифрован: " << outputPath << endl;
+            cout << "✓ Ключи сохранены в: " << keyFile << endl;
+        } catch (const exception& e) {
+            cerr << "Ошибка при шифровании: " << e.what() << endl;
+        }
+    }
+
+    void tabletDecrypt(const string& inputPath, const string& outputPath) {
+        try {
+            // Запрашиваем ключи у пользователя
+            vector<int> col_key, row_key;
+
+            cout << "Введите ключ для столбцов (индексы 0 до " << (TABLET_BLOCK_DIM - 1) << ", завершите -1):\n";
+            int k;
+            while (cin >> k && k != -1) {
+                col_key.push_back(k);
+            }
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            cout << "Введите ключ для строк (индексы 0 до " << (TABLET_BLOCK_DIM - 1) << ", завершите -1):\n";
+            while (cin >> k && k != -1) {
+                row_key.push_back(k);
+            }
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            if (col_key.size() != TABLET_BLOCK_DIM || row_key.size() != TABLET_BLOCK_DIM) {
+                cerr << "Ошибка: размер ключей должен быть " << TABLET_BLOCK_DIM << endl;
+                return;
+            }
+
+            // Читаем входной файл
+            vector<unsigned char> fileBytes = readFileBinary(inputPath);
+            
+            // Дешифруем
+            vector<unsigned char> decryptedBytes = Decrypt(fileBytes, TABLET_BLOCK_SIZE, col_key, row_key);
+            
+            // Записываем выходной файл
+            writeFileBinary(outputPath, decryptedBytes);
+            
+            cout << "✓ Файл расшифрован: " << outputPath << endl;
+        } catch (const exception& e) {
+            cerr << "Ошибка при дешифровании: " << e.what() << endl;
+        }
     }
 }

@@ -2,18 +2,23 @@
 #include <string>
 #include <vector>
 
-// Проверка уникальности букв в кодовом слове
-bool isValidCodeWord(const std::string& codeWord);
+// Проверка корректности кодового слова (только ASCII буквы)
+bool isValidCodeWord(const std::vector<unsigned char>& codeWord);
 
 // Шифрование текста
-std::string encrypt(const std::string& text, const std::string& codeWord);
+std::vector<unsigned char> encrypt(const std::vector<unsigned char>& text, 
+                                 const std::vector<unsigned char>& codeWord);
 
 // Дешифрование текста
-std::string decrypt(const std::string& text, const std::string& codeWord);
+std::vector<unsigned char> decrypt(const std::vector<unsigned char>& text,
+                                 const std::vector<unsigned char>& codeWord);
 
-
+// Функции пользовательского интерфейса
 void process_terminal_codeword(bool encrypt);
-
 void menu_codeword();
 
-std::vector<uint32_t> stringToCodepoints(const std::string& str);
+// C-style API для динамической загрузки
+extern "C" {
+    void codewordEncrypt(const std::string& inputPath, const std::string& outputPath);
+    void codewordDecrypt(const std::string& inputPath, const std::string& outputPath);
+}
