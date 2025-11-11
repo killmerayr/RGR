@@ -2,14 +2,18 @@
 #include <string>
 #include <vector>
 
-// Проверка корректности кодового слова (буквы ASCII или кириллица)
+// Проверка корректности кодового слова (буквы ASCII или кириллица, все уникальные)
+// Алгоритм: подстановочный шифр с перестановкой алфавита
+// Кодовое слово вставляется в начало алфавита, остальные буквы сдвигаются
+// Пример для англ: кодовое слово "мир" -> алфавит: "мира бвгд...xyz"
+// Поддерживает смешанный текст (англ + русский)
 bool isValidCodeWord(const std::vector<unsigned char>& codeWord);
 
-// Шифрование текста
+// Шифрование текста с подстановкой букв согласно таблице алфавита
 std::vector<unsigned char> encrypt(const std::vector<unsigned char>& text, 
                                  const std::vector<unsigned char>& codeWord);
 
-// Дешифрование текста
+// Дешифрование текста с обратной подстановкой
 std::vector<unsigned char> decrypt(const std::vector<unsigned char>& text,
                                  const std::vector<unsigned char>& codeWord);
 
