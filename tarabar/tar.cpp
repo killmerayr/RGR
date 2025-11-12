@@ -45,56 +45,91 @@ static uint32_t toLowerCp(uint32_t cp) {
     return cp;
 }
 
-static int cyrillicCpToIndex(uint32_t cp) {
-    if (cp == 0x0451) return 6;
-    if (cp >= 0x0430 && cp <= 0x0435) return cp - 0x0430;
-    if (cp >= 0x0436 && cp <= 0x044F) return 7 + (cp - 0x0436);
-    return -1;
-}
+// Build encryption and decryption maps for tarabar according to user rules.
+static void buildTarabarMaps(unordered_map<uint32_t,uint32_t>& enc, unordered_map<uint32_t,uint32_t>& dec) {
+    enc.clear(); dec.clear();
 
-static uint32_t cyrillicIndexToCp(int idx) {
-    if (idx == 6) return 0x0451;
-    if (idx <= 5) return 0x0430 + idx;
-    return 0x0436 + (idx - 7);
-}
-
-// Map a single codepoint using mirror transformation within alphabet ranges
-static uint32_t mirrorMapCp(uint32_t cp) {
-    // ASCII uppercase
-    if (cp >= 'A' && cp <= 'Z') return (uint32_t)('A' + ('Z' - cp));
-    // ASCII lowercase
-    if (cp >= 'a' && cp <= 'z') return (uint32_t)('a' + ('z' - cp));
-
-    // Cyrillic
-    uint32_t orig = cp;
-    bool isUpper = false;
-    if ((cp >= 0x0410 && cp <= 0x042F) || cp == 0x0401) {
-        isUpper = true;
-        if (cp == 0x0401) cp = 0x0451; else cp = cp + 0x20;
+    // --- Russian mappings ---
+    // Vowels mapping (lowercase)
+    // А Е Ё И О  -> Я Ю Э Ы У
+    const vector<pair<uint32_t,uint32_t>> rusVowels = {
+        {0x0430, 0x044F}, // а -> я
+        {0x0435, 0x044E}, // е -> ю
+        {0x0451, 0x044D}, // ё -> э
+        {0x0438, 0x044B}, // и -> ы
+        {0x043E, 0x0443}  // о -> у
+    };
+    for (auto &p : rusVowels) {
+        uint32_t a = p.first, b = p.second;
+        enc[a] = b; dec[b] = a;
+        // uppercase
+        uint32_t A = (a==0x0451?0x0401:(a - 0x20));
+        uint32_t B = (b==0x0451?0x0401:(b - 0x20));
+        enc[A] = B; dec[B] = A;
     }
-    uint32_t lower = toLowerCp(cp);
-    int idx = cyrillicCpToIndex(lower);
-    if (idx >= 0) {
-        int mirrored = 32 - idx;
-        uint32_t mapped = cyrillicIndexToCp(mirrored);
-        if (isUpper) {
-            if (mapped == 0x0451) return 0x0401;
-            return mapped - 0x20;
-        }
-        return mapped;
+
+    // Consonant mutual swaps (pairs)
+    const vector<pair<uint32_t,uint32_t>> rusConsonantPairs = {
+        {0x0431, 0x0449}, // б <-> щ
+        {0x0432, 0x0448}, // в <-> ш
+        {0x0433, 0x0447}, // г <-> ч
+        {0x0434, 0x0446}, // д <-> ц
+        {0x0436, 0x0445}, // ж <-> х
+        {0x0437, 0x0444}, // з <-> ф
+        {0x043A, 0x0442}, // к <-> т
+        {0x043B, 0x0441}, // л <-> с
+        {0x043C, 0x0440}, // м <-> р
+        {0x043D, 0x043F}  // н <-> п
+    };
+    for (auto &p : rusConsonantPairs) {
+        uint32_t l = p.first, r = p.second;
+        enc[l] = r; enc[r] = l;
+        dec[l] = r; dec[r] = l;
+        // uppercase
+        uint32_t L = l - 0x20; uint32_t R = r - 0x20;
+        enc[L] = R; enc[R] = L;
+        dec[L] = R; dec[R] = L;
     }
-    return orig;
+
+    // Leave 'й'(0439), 'ъ'(044A), 'ь'(044C) untouched (both cases)
+
+    // --- English mappings (example analogous table) ---
+    // Vowels: a e i o u -> u o i e a (reverse)
+    const vector<pair<char,char>> engVowels = {{'a','u'},{'e','o'},{'i','i'},{'o','e'},{'u','a'}};
+    for (auto &p : engVowels) {
+        uint32_t a = (uint32_t)p.first, b = (uint32_t)p.second;
+        enc[a] = b; dec[b] = a;
+        // uppercase
+        enc[a - 0x20] = b - 0x20; dec[b - 0x20] = a - 0x20;
+    }
+
+    // Consonant pairs for English (exclude 'y' left unchanged)
+    const vector<pair<char,char>> engCons = {
+        {'b','n'},{'c','p'},{'d','q'},{'f','r'},{'g','s'},
+        {'h','t'},{'j','v'},{'k','w'},{'l','x'},{'m','z'}
+    };
+    for (auto &p : engCons) {
+        uint32_t l = (uint32_t)p.first, r = (uint32_t)p.second;
+        enc[l] = r; enc[r] = l; dec[l] = r; dec[r] = l;
+        enc[l - 0x20] = r - 0x20; enc[r - 0x20] = l - 0x20;
+        dec[l - 0x20] = r - 0x20; dec[r - 0x20] = l - 0x20;
+    }
 }
 
 // Шифрование текста по таблице замен
 vector<unsigned char> encrypt_tarabar(const vector<unsigned char>& input) {
+    unordered_map<uint32_t,uint32_t> enc, dec;
+    buildTarabarMaps(enc, dec);
+
     vector<unsigned char> result;
     size_t i = 0;
     while (i < input.size()) {
         size_t bytes = 0;
         uint32_t cp = utf8_to_cp(input, i, bytes);
-        uint32_t mapped = mirrorMapCp(cp);
-        cp_to_utf8(mapped, result);
+        uint32_t outcp = cp;
+        auto it = enc.find(cp);
+        if (it != enc.end()) outcp = it->second;
+        cp_to_utf8(outcp, result);
         i += (bytes > 0 ? bytes : 1);
     }
     return result;
@@ -102,7 +137,21 @@ vector<unsigned char> encrypt_tarabar(const vector<unsigned char>& input) {
 
 // Дешифрование текста (так как таблица обратима, используем ту же функцию)
 vector<unsigned char> decrypt_tarabar(const vector<unsigned char>& input) {
-    return encrypt_tarabar(input);
+    unordered_map<uint32_t,uint32_t> enc, dec;
+    buildTarabarMaps(enc, dec);
+
+    vector<unsigned char> result;
+    size_t i = 0;
+    while (i < input.size()) {
+        size_t bytes = 0;
+        uint32_t cp = utf8_to_cp(input, i, bytes);
+        uint32_t outcp = cp;
+        auto it = dec.find(cp);
+        if (it != dec.end()) outcp = it->second;
+        cp_to_utf8(outcp, result);
+        i += (bytes > 0 ? bytes : 1);
+    }
+    return result;
 }
 
 // Обработка ввода из терминала
