@@ -2,6 +2,7 @@
 #include "../main/utils.h"
 #include <iostream>
 #include <string>
+#include <cstdint>
 #include <vector>
 #include <stdexcept>
 #include <algorithm>
@@ -18,12 +19,20 @@ using std::cerr;
 using namespace std;
 
 // Forward declarations вспомогательных функций
-vector<char> createSubstitutionTableEnglish(const string& codeWord);
-vector<string> createSubstitutionTableCyrillic(const string& codeWord);
-char encryptCharEnglish(char c, const vector<char>& table);
-char decryptCharEnglish(char c, const vector<char>& table);
-string encryptCharCyrillic(const string& cyrChar, const vector<string>& table);
-string decryptCharCyrillic(const string& cyrChar, const vector<string>& table);
+// UTF-8 / codepoint helpers and table builders
+uint32_t utf8_to_cp(const string& s, size_t pos, size_t& bytes);
+string cp_to_utf8(uint32_t cp);
+uint32_t toLowerCp(uint32_t cp);
+int cyrillicCpToIndex(uint32_t cp);
+uint32_t cyrillicIndexToCp(int idx);
+
+// Substitution tables use code points (uint32_t) rather than hard-coded arrays
+vector<uint32_t> createSubstitutionTableEnglish(const string& codeWord);
+vector<uint32_t> createSubstitutionTableCyrillic(const string& codeWord);
+uint32_t encryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table);
+uint32_t decryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table);
+uint32_t encryptCharCyrillicCp(uint32_t cp, const vector<uint32_t>& table);
+uint32_t decryptCharCyrillicCp(uint32_t cp, const vector<uint32_t>& table);
 
 // Приведение ASCII буквы к нижнему регистру
 unsigned char toLower(unsigned char c) {
@@ -93,157 +102,142 @@ bool isValidCodeWord(const vector<unsigned char>& codeWord) {
 
 // Создание таблицы подстановки для английского алфавита
 // Пример: кодовое слово "мир" -> таблица: ["м", "и", "р", "а", "б", "в", ..., "я"]
-vector<char> createSubstitutionTableEnglish(const string& codeWord) {
-    vector<char> table;
-    unordered_set<char> used;
-    
-    // Добавляем уникальные буквы из кодового слова
-    for (char c : codeWord) {
-        char lower = toLower(c);
-        if ((lower >= 'a' && lower <= 'z') && !used.count(lower)) {
-            table.push_back(lower);
-            used.insert(lower);
+vector<uint32_t> createSubstitutionTableEnglish(const string& codeWord) {
+    vector<uint32_t> table;
+    unordered_set<uint32_t> used;
+
+    // Пробегаем по кодовому слову, декодируем UTF-8, добавляем английские буквы в lower-case
+    size_t i = 0;
+    while (i < codeWord.size()) {
+        size_t bytes = 0;
+        uint32_t cp = utf8_to_cp(codeWord, i, bytes);
+        if (bytes == 1) {
+            // ASCII
+            uint32_t lower = toLower((unsigned char)cp);
+            if (lower >= 'a' && lower <= 'z' && !used.count(lower)) {
+                used.insert(lower);
+                table.push_back(lower);
+            }
         }
+        i += (bytes > 0 ? bytes : 1);
     }
-    
-    // Добавляем оставшиеся буквы в алфавитном порядке
-    for (char c = 'a'; c <= 'z'; c++) {
-        if (!used.count(c)) {
-            table.push_back(c);
-        }
+
+    // Добавляем оставшиеся буквы по кодовым значениям
+    for (uint32_t cp = (uint32_t)'a'; cp <= (uint32_t)'z'; ++cp) {
+        if (!used.count(cp)) table.push_back(cp);
     }
-    
+
     return table;
 }
 
 // Создание таблицы подстановки для кириллицы
 // Пример: кодовое слово "мир" для кириллицы: ["м", "и", "р", "а", "б", "в", ..., "я"]
-vector<string> createSubstitutionTableCyrillic(const string& codeWord) {
-    vector<string> table;
-    unordered_set<string> used;
-    
-    // Русский алфавит: а-я + ё
-    const vector<string> cyrAlphabet = {
-        "\xD0\xB0", "\xD0\xB1", "\xD0\xB2", "\xD0\xB3", "\xD0\xB4", "\xD0\xB5",
-        "\xD1\x91", "\xD0\xB6", "\xD0\xB7", "\xD0\xB8", "\xD0\xB9", "\xD0\xBA",
-        "\xD0\xBB", "\xD0\xBC", "\xD0\xBD", "\xD0\xBE", "\xD0\xBF", "\xD1\x80",
-        "\xD1\x81", "\xD1\x82", "\xD1\x83", "\xD1\x84", "\xD1\x85", "\xD1\x86",
-        "\xD1\x87", "\xD1\x88", "\xD1\x89", "\xD1\x8A", "\xD1\x8B", "\xD1\x8C",
-        "\xD1\x8D", "\xD1\x8E", "\xD1\x8F"
-    };
-    
-    // Добавляем уникальные буквы из кодового слова в нижнем регистре
+vector<uint32_t> createSubstitutionTableCyrillic(const string& codeWord) {
+    vector<uint32_t> table;
+    unordered_set<uint32_t> used;
+
+    // Проходим кодовое слово, добавляем русские буквы (нормализованные в lower-case)
     size_t i = 0;
     while (i < codeWord.size()) {
-        unsigned char c = codeWord[i];
-        
-        // ASCII буква - пропускаем для кириллицы
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
-            i++;
-            continue;
-        }
-        
-        // UTF-8 кириллица (2 байта)
-        if (i + 1 < codeWord.size()) {
-            string cyrChar(codeWord.begin() + i, codeWord.begin() + i + 2);
-            
-            // Приводим к нижнему регистру
-            if (cyrChar == "\xD0\x81") cyrChar = "\xD1\x91"; // Ё -> ё
-            
-            if (!used.count(cyrChar)) {
-                table.push_back(cyrChar);
-                used.insert(cyrChar);
+        size_t bytes = 0;
+        uint32_t cp = utf8_to_cp(codeWord, i, bytes);
+        if (bytes == 2) {
+            uint32_t lower = toLowerCp(cp);
+            int idx = cyrillicCpToIndex(lower);
+            if (idx >= 0) {
+                if (!used.count(lower)) {
+                    used.insert(lower);
+                    table.push_back(lower);
+                }
             }
-            i += 2;
-        } else {
-            i++;
+        }
+        i += (bytes > 0 ? bytes : 1);
+    }
+
+    // Добавляем оставшиеся кириллические буквы по индексам (а..я с ё после е)
+    for (int idx = 0; idx <= 32; ++idx) {
+        uint32_t cp = cyrillicIndexToCp(idx);
+        if (!used.count(cp)) {
+            table.push_back(cp);
         }
     }
-    
-    // Добавляем оставшиеся буквы
-    for (const auto& ch : cyrAlphabet) {
-        if (!used.count(ch)) {
-            table.push_back(ch);
-        }
-    }
-    
+
     return table;
 }
 
 // Шифрование одной ASCII буквы
-char encryptCharEnglish(char c, const vector<char>& table) {
-    bool isUpper = (c >= 'A' && c <= 'Z');
-    c = toLower(c);
-    
-    int idx = c - 'a';
-    if (idx < 0 || idx >= table.size()) return c;
-    
-    char encrypted = table[idx];
-    return isUpper ? (char)(encrypted - 'a' + 'A') : encrypted;
+uint32_t encryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table) {
+    bool isUpper = (cp >= 'A' && cp <= 'Z');
+    uint32_t lower = toLower((unsigned char)cp);
+    int idx = (int)(lower - 'a');
+    if (idx < 0 || idx >= (int)table.size()) return cp;
+    uint32_t encrypted = table[idx];
+    if (isUpper) {
+        // make uppercase
+        return (uint32_t)((char)(encrypted - 'a' + 'A'));
+    }
+    return encrypted;
 }
 
-// Дешифрование одной ASCII буквы
-char decryptCharEnglish(char c, const vector<char>& table) {
-    bool isUpper = (c >= 'A' && c <= 'Z');
-    c = toLower(c);
-    
-    // Ищем букву в таблице и возвращаем её индекс (букву стандартного алфавита)
-    for (int i = 0; i < table.size(); i++) {
-        if (table[i] == c) {
-            char decrypted = 'a' + i;
-            return isUpper ? (char)(decrypted - 'a' + 'A') : decrypted;
+uint32_t decryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table) {
+    bool isUpper = (cp >= 'A' && cp <= 'Z');
+    uint32_t lower = toLower((unsigned char)cp);
+    // find in table
+    for (int i = 0; i < (int)table.size(); ++i) {
+        if (table[i] == lower) {
+            uint32_t dec = (uint32_t)('a' + i);
+            if (isUpper) return (uint32_t)((char)(dec - 'a' + 'A'));
+            return dec;
         }
     }
-    return c;
+    return cp;
 }
 
 // Шифрование одного кириллицы символа
-string encryptCharCyrillic(const string& cyrChar, const vector<string>& table) {
-    // Приводим к нижнему регистру
-    string lower = cyrChar;
-    if (lower == "\xD0\x81") lower = "\xD1\x91"; // Ё -> ё
-    
-    // Ищем индекс в стандартном алфавите
-    const vector<string> cyrAlphabet = {
-        "\xD0\xB0", "\xD0\xB1", "\xD0\xB2", "\xD0\xB3", "\xD0\xB4", "\xD0\xB5",
-        "\xD1\x91", "\xD0\xB6", "\xD0\xB7", "\xD0\xB8", "\xD0\xB9", "\xD0\xBA",
-        "\xD0\xBB", "\xD0\xBC", "\xD0\xBD", "\xD0\xBE", "\xD0\xBF", "\xD1\x80",
-        "\xD1\x81", "\xD1\x82", "\xD1\x83", "\xD1\x84", "\xD1\x85", "\xD1\x86",
-        "\xD1\x87", "\xD1\x88", "\xD1\x89", "\xD1\x8A", "\xD1\x8B", "\xD1\x8C",
-        "\xD1\x8D", "\xD1\x8E", "\xD1\x8F"
-    };
-    
-    int idx = -1;
-    for (int i = 0; i < cyrAlphabet.size(); i++) {
-        if (cyrAlphabet[i] == lower) {
-            idx = i;
-            break;
-        }
+uint32_t encryptCharCyrillicCp(uint32_t cp, const vector<uint32_t>& table) {
+    // remember case
+    bool isUpper = false;
+    uint32_t orig = cp;
+    // uppercase Cyrillic range U+0410..U+042F and U+0401 (Ё)
+    if ((cp >= 0x0410 && cp <= 0x042F) || cp == 0x0401) {
+        isUpper = true;
+        // convert to lowercase
+        if (cp == 0x0401) cp = 0x0451; else cp = cp + 0x20;
     }
-    
-    if (idx < 0 || idx >= table.size()) return cyrChar;
-    
-    return table[idx];
+
+    // normalize ё uppercase handled above
+    uint32_t lower = toLowerCp(cp);
+    int idx = cyrillicCpToIndex(lower);
+    if (idx < 0 || idx >= (int)table.size()) return orig;
+    uint32_t mapped = table[idx];
+    // restore case
+    if (isUpper) {
+        if (mapped == 0x0451) return 0x0401;
+        return mapped - 0x20;
+    }
+    return mapped;
 }
 
-// Дешифрование одного кириллицы символа
-string decryptCharCyrillic(const string& cyrChar, const vector<string>& table) {
-    const vector<string> cyrAlphabet = {
-        "\xD0\xB0", "\xD0\xB1", "\xD0\xB2", "\xD0\xB3", "\xD0\xB4", "\xD0\xB5",
-        "\xD1\x91", "\xD0\xB6", "\xD0\xB7", "\xD0\xB8", "\xD0\xB9", "\xD0\xBA",
-        "\xD0\xBB", "\xD0\xBC", "\xD0\xBD", "\xD0\xBE", "\xD0\xBF", "\xD1\x80",
-        "\xD1\x81", "\xD1\x82", "\xD1\x83", "\xD1\x84", "\xD1\x85", "\xD1\x86",
-        "\xD1\x87", "\xD1\x88", "\xD1\x89", "\xD1\x8A", "\xD1\x8B", "\xD1\x8C",
-        "\xD1\x8D", "\xD1\x8E", "\xD1\x8F"
-    };
-    
-    // Ищем букву в таблице и возвращаем её стандартное положение
-    for (int i = 0; i < table.size(); i++) {
-        if (table[i] == cyrChar) {
-            return cyrAlphabet[i];
-        }
+uint32_t decryptCharCyrillicCp(uint32_t cp, const vector<uint32_t>& table) {
+    bool isUpper = false;
+    uint32_t orig = cp;
+    if ((cp >= 0x0410 && cp <= 0x042F) || cp == 0x0401) {
+        isUpper = true;
+        if (cp == 0x0401) cp = 0x0451; else cp = cp + 0x20;
     }
-    return cyrChar;
+    uint32_t lower = toLowerCp(cp);
+    // find in table
+    int found = -1;
+    for (int i = 0; i < (int)table.size(); ++i) {
+        if (table[i] == lower) { found = i; break; }
+    }
+    if (found < 0) return orig;
+    uint32_t dec = cyrillicIndexToCp(found);
+    if (isUpper) {
+        if (dec == 0x0451) return 0x0401;
+        return dec - 0x20;
+    }
+    return dec;
 }
 
 // Шифрование текста (поддержка ASCII и кириллицы)
@@ -273,8 +267,9 @@ vector<unsigned char> encrypt(const vector<unsigned char>& text, const vector<un
         }
     }
     
-    vector<char> tableEnglish;
-    vector<string> tableCyrillic;
+    vector<uint32_t> tableEnglish;
+    vector<uint32_t> tableCyrillic;
+    string textStr(text.begin(), text.end());
     
     if (hasEnglish) {
         tableEnglish = createSubstitutionTableEnglish(codeWordStr);
@@ -290,20 +285,21 @@ vector<unsigned char> encrypt(const vector<unsigned char>& text, const vector<un
         
         // ASCII буква
         if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
-            char encrypted = encryptCharEnglish(c, tableEnglish);
-            result.push_back(encrypted);
+            uint32_t cp = (unsigned char)c;
+            uint32_t mapped = encryptCharEnglishCp(cp, tableEnglish);
+            result.push_back((unsigned char)mapped);
             i++;
         }
         // UTF-8 кириллица (2 байта)
         else if (i + 1 < text.size() && 
                  ((c == 0xD0 && ((text[i+1] >= 0x90 && text[i+1] <= 0xBF) || text[i+1] == 0x81)) ||
                   (c == 0xD1 && ((text[i+1] >= 0x80 && text[i+1] <= 0x8F) || text[i+1] == 0x91)))) {
-            string cyrChar(text.begin() + i, text.begin() + i + 2);
-            string encrypted = encryptCharCyrillic(cyrChar, tableCyrillic);
-            for (char ch : encrypted) {
-                result.push_back((unsigned char)ch);
-            }
-            i += 2;
+            size_t bytes = 0;
+            uint32_t cp = utf8_to_cp(textStr, i, bytes);
+            uint32_t mapped = encryptCharCyrillicCp(cp, tableCyrillic);
+            string enc = cp_to_utf8(mapped);
+            for (unsigned char ch : enc) result.push_back(ch);
+            i += bytes > 0 ? bytes : 2;
         } else {
             // Не буква — копируем как есть
             result.push_back(c);
@@ -321,8 +317,9 @@ vector<unsigned char> decrypt(const vector<unsigned char>& text, const vector<un
     vector<unsigned char> result;
     string codeWordStr(codeWord.begin(), codeWord.end());
     
-    vector<char> tableEnglish = createSubstitutionTableEnglish(codeWordStr);
-    vector<string> tableCyrillic = createSubstitutionTableCyrillic(codeWordStr);
+    vector<uint32_t> tableEnglish = createSubstitutionTableEnglish(codeWordStr);
+    vector<uint32_t> tableCyrillic = createSubstitutionTableCyrillic(codeWordStr);
+    string textStr(text.begin(), text.end());
     
     // Дешифруем текст
     size_t i = 0;
@@ -331,20 +328,21 @@ vector<unsigned char> decrypt(const vector<unsigned char>& text, const vector<un
         
         // ASCII буква
         if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
-            char decrypted = decryptCharEnglish(c, tableEnglish);
-            result.push_back(decrypted);
+            uint32_t cp = (unsigned char)c;
+            uint32_t mapped = decryptCharEnglishCp(cp, tableEnglish);
+            result.push_back((unsigned char)mapped);
             i++;
         }
         // UTF-8 кириллица (2 байта)
         else if (i + 1 < text.size() && 
                  ((c == 0xD0 && ((text[i+1] >= 0x90 && text[i+1] <= 0xBF) || text[i+1] == 0x81)) ||
                   (c == 0xD1 && ((text[i+1] >= 0x80 && text[i+1] <= 0x8F) || text[i+1] == 0x91)))) {
-            string cyrChar(text.begin() + i, text.begin() + i + 2);
-            string decrypted = decryptCharCyrillic(cyrChar, tableCyrillic);
-            for (char ch : decrypted) {
-                result.push_back((unsigned char)ch);
-            }
-            i += 2;
+            size_t bytes = 0;
+            uint32_t cp = utf8_to_cp(textStr, i, bytes);
+            uint32_t mapped = decryptCharCyrillicCp(cp, tableCyrillic);
+            string dec = cp_to_utf8(mapped);
+            for (unsigned char ch : dec) result.push_back(ch);
+            i += bytes > 0 ? bytes : 2;
         } else {
             // Не буква — копируем как есть
             result.push_back(c);
@@ -355,8 +353,80 @@ vector<unsigned char> decrypt(const vector<unsigned char>& text, const vector<un
     return result;
 }
 
-// Вспомогательные функции для работы с кириллицей
 
+// Вспомогательные функции для работы с UTF-8 и кодовыми значениями
+// Декодируем кодовую точку UTF-8 из строки s, начиная с pos.
+// Возвращаем кодовую точку и количество байт в bytes (1 или 2 for our use).
+uint32_t utf8_to_cp(const string& s, size_t pos, size_t& bytes) {
+    bytes = 0;
+    if (pos >= s.size()) return 0;
+    unsigned char c0 = (unsigned char)s[pos];
+    if (c0 < 0x80) {
+        bytes = 1;
+        return (uint32_t)c0;
+    }
+    // expecting 2-byte Cyrillic
+    if (pos + 1 < s.size()) {
+        unsigned char c1 = (unsigned char)s[pos+1];
+        bytes = 2;
+        // decode two-byte UTF-8
+        uint32_t cp = ((c0 & 0x1F) << 6) | (c1 & 0x3F);
+        return cp;
+    }
+    // fallback
+    bytes = 1;
+    return (uint32_t)c0;
+}
+
+// Кодовая точка в UTF-8 строку
+string cp_to_utf8(uint32_t cp) {
+    if (cp < 0x80) {
+        return string(1, (char)cp);
+    }
+    if (cp <= 0x7FF) {
+        unsigned char b1 = 0xC0 | ((cp >> 6) & 0x1F);
+        unsigned char b2 = 0x80 | (cp & 0x3F);
+        return string((char*)"", 0) + (char)b1 + (char)b2;
+    }
+    // not expected for our alphabets, but handle 3-byte
+    unsigned char b1 = 0xE0 | ((cp >> 12) & 0x0F);
+    unsigned char b2 = 0x80 | ((cp >> 6) & 0x3F);
+    unsigned char b3 = 0x80 | (cp & 0x3F);
+    string s;
+    s.push_back((char)b1);
+    s.push_back((char)b2);
+    s.push_back((char)b3);
+    return s;
+}
+
+// Нормализация в нижний регистр для ASCII и кириллицы (codepoints)
+uint32_t toLowerCp(uint32_t cp) {
+    // ASCII
+    if (cp >= 'A' && cp <= 'Z') return cp + 0x20;
+    // Cyrillic uppercase А..Я U+0410..U+042F -> +0x20 to get lowercase
+    if (cp >= 0x0410 && cp <= 0x042F) return cp + 0x20;
+    // Ё (uppercase U+0401) -> ё U+0451
+    if (cp == 0x0401) return 0x0451;
+    return cp;
+}
+
+// Преобразование кодовой точки кириллицы в индекс 0..32 (а..я с ё после е)
+int cyrillicCpToIndex(uint32_t cp) {
+    // expecting lowercase codepoint
+    if (cp == 0x0451) return 6; // ё
+    if (cp >= 0x0430 && cp <= 0x0435) return cp - 0x0430; // а..е -> 0..5
+    if (cp >= 0x0436 && cp <= 0x044F) return 7 + (cp - 0x0436); // ж..я -> 7..
+    return -1;
+}
+
+// Индекс 0..32 -> кодовая точка (lowercase)
+uint32_t cyrillicIndexToCp(int idx) {
+    if (idx < 0 || idx > 32) return 0x0430;
+    if (idx == 6) return 0x0451;
+    if (idx <= 5) return 0x0430 + idx;
+    // idx >=7
+    return 0x0436 + (idx - 7);
+}
 
 
 void process_terminal_codeword(bool do_encrypt) {

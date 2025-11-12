@@ -5,55 +5,97 @@
 #include <fstream>
 #include <vector>
 #include <unordered_map>
+#include <cstdint>
 
 using namespace std;
 
 // Создание таблицы замен для ASCII символов
-unordered_map<unsigned char, unsigned char> createTarabarMap() {
-    unordered_map<unsigned char, unsigned char> m;
-    // Английские заглавные буквы (зеркалирование)
-    m['A'] = 'Z'; m['Z'] = 'A';
-    m['B'] = 'Y'; m['Y'] = 'B';
-    m['C'] = 'X'; m['X'] = 'C';
-    m['D'] = 'W'; m['W'] = 'D';
-    m['E'] = 'V'; m['V'] = 'E';
-    m['F'] = 'U'; m['U'] = 'F';
-    m['G'] = 'T'; m['T'] = 'G';
-    m['H'] = 'S'; m['S'] = 'H';
-    m['I'] = 'R'; m['R'] = 'I';
-    m['J'] = 'Q'; m['Q'] = 'J';
-    m['K'] = 'P'; m['P'] = 'K';
-    m['L'] = 'O'; m['O'] = 'L';
-    m['M'] = 'N'; m['N'] = 'M';
-    // Английские строчные буквы (зеркалирование)
-    m['a'] = 'z'; m['z'] = 'a';
-    m['b'] = 'y'; m['y'] = 'b';
-    m['c'] = 'x'; m['x'] = 'c';
-    m['d'] = 'w'; m['w'] = 'd';
-    m['e'] = 'v'; m['v'] = 'e';
-    m['f'] = 'u'; m['u'] = 'f';
-    m['g'] = 't'; m['t'] = 'g';
-    m['h'] = 's'; m['s'] = 'h';
-    m['i'] = 'r'; m['r'] = 'i';
-    m['j'] = 'q'; m['q'] = 'j';
-    m['k'] = 'p'; m['p'] = 'k';
-    m['l'] = 'o'; m['o'] = 'l';
-    m['m'] = 'n'; m['n'] = 'n';
-    return m;
+// Helpers: UTF-8 decode/encode for 1-2 byte sequences (ASCII and Cyrillic)
+static uint32_t utf8_to_cp(const vector<unsigned char>& data, size_t pos, size_t& bytes) {
+    bytes = 0;
+    if (pos >= data.size()) return 0;
+    unsigned char c0 = data[pos];
+    if (c0 < 0x80) { bytes = 1; return (uint32_t)c0; }
+    if (pos + 1 < data.size()) {
+        unsigned char c1 = data[pos+1];
+        bytes = 2;
+        uint32_t cp = ((c0 & 0x1F) << 6) | (c1 & 0x3F);
+        return cp;
+    }
+    bytes = 1; return (uint32_t)c0;
+}
+
+static void cp_to_utf8(uint32_t cp, vector<unsigned char>& out) {
+    if (cp < 0x80) { out.push_back((unsigned char)cp); return; }
+    if (cp <= 0x7FF) {
+        unsigned char b1 = 0xC0 | ((cp >> 6) & 0x1F);
+        unsigned char b2 = 0x80 | (cp & 0x3F);
+        out.push_back(b1); out.push_back(b2); return;
+    }
+    unsigned char b1 = 0xE0 | ((cp >> 12) & 0x0F);
+    unsigned char b2 = 0x80 | ((cp >> 6) & 0x3F);
+    unsigned char b3 = 0x80 | (cp & 0x3F);
+    out.push_back(b1); out.push_back(b2); out.push_back(b3);
+}
+
+static uint32_t toLowerCp(uint32_t cp) {
+    if (cp >= 'A' && cp <= 'Z') return cp + 0x20;
+    if (cp >= 0x0410 && cp <= 0x042F) return cp + 0x20;
+    if (cp == 0x0401) return 0x0451;
+    return cp;
+}
+
+static int cyrillicCpToIndex(uint32_t cp) {
+    if (cp == 0x0451) return 6;
+    if (cp >= 0x0430 && cp <= 0x0435) return cp - 0x0430;
+    if (cp >= 0x0436 && cp <= 0x044F) return 7 + (cp - 0x0436);
+    return -1;
+}
+
+static uint32_t cyrillicIndexToCp(int idx) {
+    if (idx == 6) return 0x0451;
+    if (idx <= 5) return 0x0430 + idx;
+    return 0x0436 + (idx - 7);
+}
+
+// Map a single codepoint using mirror transformation within alphabet ranges
+static uint32_t mirrorMapCp(uint32_t cp) {
+    // ASCII uppercase
+    if (cp >= 'A' && cp <= 'Z') return (uint32_t)('A' + ('Z' - cp));
+    // ASCII lowercase
+    if (cp >= 'a' && cp <= 'z') return (uint32_t)('a' + ('z' - cp));
+
+    // Cyrillic
+    uint32_t orig = cp;
+    bool isUpper = false;
+    if ((cp >= 0x0410 && cp <= 0x042F) || cp == 0x0401) {
+        isUpper = true;
+        if (cp == 0x0401) cp = 0x0451; else cp = cp + 0x20;
+    }
+    uint32_t lower = toLowerCp(cp);
+    int idx = cyrillicCpToIndex(lower);
+    if (idx >= 0) {
+        int mirrored = 32 - idx;
+        uint32_t mapped = cyrillicIndexToCp(mirrored);
+        if (isUpper) {
+            if (mapped == 0x0451) return 0x0401;
+            return mapped - 0x20;
+        }
+        return mapped;
+    }
+    return orig;
 }
 
 // Шифрование текста по таблице замен
 vector<unsigned char> encrypt_tarabar(const vector<unsigned char>& input) {
-    auto table = createTarabarMap();
     vector<unsigned char> result;
-    
-    for (unsigned char c : input) {
-        auto it = table.find(c);
-        if (it != table.end()) {
-            result.push_back(it->second);
-        } else {
-            result.push_back(c); // Оставляем символ без изменений, если его нет в таблице
-        }
+    size_t i = 0;
+    while (i < input.size()) {
+        size_t bytes = 0;
+        uint32_t cp = utf8_to_cp(input, i, bytes);
+        uint32_t mapped = mirrorMapCp(cp);
+        cp_to_utf8(mapped, result);
+        i += (bytes > 0 ? bytes : 1);
     }
     return result;
 }
