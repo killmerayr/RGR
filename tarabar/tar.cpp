@@ -39,7 +39,7 @@ static void cp_to_utf8(uint32_t cp, vector<unsigned char>& out) {
 }
 
 static uint32_t toLowerCp(uint32_t cp) {
-    if (cp >= 'A' && cp <= 'Z') return cp + 0x20;
+    if (cp >= 0x41 && cp <= 0x5A) return cp + 0x20;
     if (cp >= 0x0410 && cp <= 0x042F) return cp + 0x20;
     if (cp == 0x0401) return 0x0451;
     return cp;
@@ -94,22 +94,36 @@ static void buildTarabarMaps(unordered_map<uint32_t,uint32_t>& enc, unordered_ma
     // Leave 'й'(0439), 'ъ'(044A), 'ь'(044C) untouched (both cases)
 
     // --- English mappings (example analogous table) ---
-    // Vowels: a e i o u -> u o i e a (reverse)
-    const vector<pair<char,char>> engVowels = {{'a','u'},{'e','o'},{'i','i'},{'o','e'},{'u','a'}};
+    // Vowels: 0x61 0x65 0x69 0x6F 0x75 -> 0x75 0x6F 0x69 0x65 0x61 (reverse)
+    const vector<pair<uint32_t,uint32_t>> engVowels = {
+        {0x61, 0x75}, // a -> u
+        {0x65, 0x6F}, // e -> o
+        {0x69, 0x69}, // i -> i
+        {0x6F, 0x65}, // o -> e
+        {0x75, 0x61}  // u -> a
+    };
     for (auto &p : engVowels) {
-        uint32_t a = (uint32_t)p.first, b = (uint32_t)p.second;
+        uint32_t a = p.first, b = p.second;
         enc[a] = b; dec[b] = a;
         // uppercase
         enc[a - 0x20] = b - 0x20; dec[b - 0x20] = a - 0x20;
     }
 
     // Consonant pairs for English (exclude 'y' left unchanged)
-    const vector<pair<char,char>> engCons = {
-        {'b','n'},{'c','p'},{'d','q'},{'f','r'},{'g','s'},
-        {'h','t'},{'j','v'},{'k','w'},{'l','x'},{'m','z'}
+    const vector<pair<uint32_t,uint32_t>> engCons = {
+        {0x62, 0x6E}, // b <-> n
+        {0x63, 0x70}, // c <-> p
+        {0x64, 0x71}, // d <-> q
+        {0x66, 0x72}, // f <-> r
+        {0x67, 0x73}, // g <-> s
+        {0x68, 0x74}, // h <-> t
+        {0x6A, 0x76}, // j <-> v
+        {0x6B, 0x77}, // k <-> w
+        {0x6C, 0x78}, // l <-> x
+        {0x6D, 0x7A}  // m <-> z
     };
     for (auto &p : engCons) {
-        uint32_t l = (uint32_t)p.first, r = (uint32_t)p.second;
+        uint32_t l = p.first, r = p.second;
         enc[l] = r; enc[r] = l; dec[l] = r; dec[r] = l;
         enc[l - 0x20] = r - 0x20; enc[r - 0x20] = l - 0x20;
         dec[l - 0x20] = r - 0x20; dec[r - 0x20] = l - 0x20;

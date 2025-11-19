@@ -36,8 +36,8 @@ uint32_t decryptCharCyrillicCp(uint32_t cp, const vector<uint32_t>& table);
 
 // Приведение ASCII буквы к нижнему регистру
 unsigned char toLower(unsigned char c) {
-    if (c >= 'A' && c <= 'Z') {
-        return c + ('a' - 'A');
+    if (c >= 0x41 && c <= 0x5A) {
+        return c + (0x61 - 0x41);
     }
     return c;
 }
@@ -77,7 +77,7 @@ bool isValidCodeWord(const vector<unsigned char>& codeWord) {
         unsigned char c = codeWord[i];
         
         // ASCII буква
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+        if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) {
             string key(1, toLower(c));
             if (seenChars.count(key)) return false;
             seenChars.insert(key);
@@ -114,7 +114,7 @@ vector<uint32_t> createSubstitutionTableEnglish(const string& codeWord) {
         if (bytes == 1) {
             // ASCII
             uint32_t lower = toLower((unsigned char)cp);
-            if (lower >= 'a' && lower <= 'z' && !used.count(lower)) {
+            if (lower >= 0x61 && lower <= 0x7A && !used.count(lower)) {
                 used.insert(lower);
                 table.push_back(lower);
             }
@@ -123,7 +123,7 @@ vector<uint32_t> createSubstitutionTableEnglish(const string& codeWord) {
     }
 
     // Добавляем оставшиеся буквы по кодовым значениям
-    for (uint32_t cp = (uint32_t)'a'; cp <= (uint32_t)'z'; ++cp) {
+    for (uint32_t cp = 0x61; cp <= 0x7A; ++cp) {
         if (!used.count(cp)) table.push_back(cp);
     }
 
@@ -167,26 +167,25 @@ vector<uint32_t> createSubstitutionTableCyrillic(const string& codeWord) {
 
 // Шифрование одной ASCII буквы
 uint32_t encryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table) {
-    bool isUpper = (cp >= 'A' && cp <= 'Z');
+    bool isUpper = (cp >= 0x41 && cp <= 0x5A);
     uint32_t lower = toLower((unsigned char)cp);
-    int idx = (int)(lower - 'a');
+    int idx = (int)(lower - 0x61);
     if (idx < 0 || idx >= (int)table.size()) return cp;
     uint32_t encrypted = table[idx];
     if (isUpper) {
-        // make uppercase
-        return (uint32_t)((char)(encrypted - 'a' + 'A'));
+        return (uint32_t)((char)(encrypted - 0x61 + 0x41));
     }
     return encrypted;
 }
 
 uint32_t decryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table) {
-    bool isUpper = (cp >= 'A' && cp <= 'Z');
+    bool isUpper = (cp >= 0x41 && cp <= 0x5A);
     uint32_t lower = toLower((unsigned char)cp);
     // find in table
     for (int i = 0; i < (int)table.size(); ++i) {
         if (table[i] == lower) {
-            uint32_t dec = (uint32_t)('a' + i);
-            if (isUpper) return (uint32_t)((char)(dec - 'a' + 'A'));
+            uint32_t dec = (uint32_t)(0x61 + i);
+            if (isUpper) return (uint32_t)((char)(dec - 0x61 + 0x41));
             return dec;
         }
     }
@@ -254,7 +253,7 @@ vector<unsigned char> encrypt(const vector<unsigned char>& text, const vector<un
     size_t i = 0;
     while (i < text.size()) {
         unsigned char c = text[i];
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+        if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) {
             hasEnglish = true;
             i++;
         } else if (i + 1 < text.size() && 
@@ -284,7 +283,7 @@ vector<unsigned char> encrypt(const vector<unsigned char>& text, const vector<un
         unsigned char c = text[i];
         
         // ASCII буква
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+        if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) {
             uint32_t cp = (unsigned char)c;
             uint32_t mapped = encryptCharEnglishCp(cp, tableEnglish);
             result.push_back((unsigned char)mapped);
@@ -327,7 +326,7 @@ vector<unsigned char> decrypt(const vector<unsigned char>& text, const vector<un
         unsigned char c = text[i];
         
         // ASCII буква
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+        if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) {
             uint32_t cp = (unsigned char)c;
             uint32_t mapped = decryptCharEnglishCp(cp, tableEnglish);
             result.push_back((unsigned char)mapped);
@@ -386,23 +385,26 @@ string cp_to_utf8(uint32_t cp) {
     if (cp <= 0x7FF) {
         unsigned char b1 = 0xC0 | ((cp >> 6) & 0x1F);
         unsigned char b2 = 0x80 | (cp & 0x3F);
-        return string((char*)"", 0) + (char)b1 + (char)b2;
+        string result;
+        result.push_back((char)b1);
+        result.push_back((char)b2);
+        return result;
     }
     // not expected for our alphabets, but handle 3-byte
     unsigned char b1 = 0xE0 | ((cp >> 12) & 0x0F);
     unsigned char b2 = 0x80 | ((cp >> 6) & 0x3F);
     unsigned char b3 = 0x80 | (cp & 0x3F);
-    string s;
-    s.push_back((char)b1);
-    s.push_back((char)b2);
-    s.push_back((char)b3);
-    return s;
+    string result;
+    result.push_back((char)b1);
+    result.push_back((char)b2);
+    result.push_back((char)b3);
+    return result;
 }
 
 // Нормализация в нижний регистр для ASCII и кириллицы (codepoints)
 uint32_t toLowerCp(uint32_t cp) {
     // ASCII
-    if (cp >= 'A' && cp <= 'Z') return cp + 0x20;
+    if (cp >= 0x41 && cp <= 0x5A) return cp + 0x20;
     // Cyrillic uppercase А..Я U+0410..U+042F -> +0x20 to get lowercase
     if (cp >= 0x0410 && cp <= 0x042F) return cp + 0x20;
     // Ё (uppercase U+0401) -> ё U+0451
