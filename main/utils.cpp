@@ -6,7 +6,7 @@
 #include <cstring>
 
 bool isAsciiLetter(unsigned char c) {
-    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+    return (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A);
 }
 
 // UTF-8 проверка буквы (ASCII или кириллица)
@@ -14,7 +14,7 @@ bool isLetter(const std::string& text, size_t pos, size_t& charLen) {
     unsigned char c = text[pos];
     
     // ASCII буква
-    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+    if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) {
         charLen = 1;
         return true;
     }
@@ -77,22 +77,24 @@ void writeFile(const std::string& filename, const std::string& content) {
 
 std::string Password() {
     std::string password, confirm;
-    std::cout << "Введите пароль для файла: ";
-    std::getline(std::cin, password);
-    std::cout << "Подтвердите пароль: ";
-    std::getline(std::cin, confirm);
+    
+    while (true) {
+        std::cout << "Введите пароль для файла: ";
+        std::getline(std::cin, password);
+        
+        std::cout << "Подтвердите пароль: ";
+        std::getline(std::cin, confirm);
 
-    if (password != confirm) {
-        std::cerr << "Пароли не совпадают! Повторите ввод\n";
-        return Password();
+        if (password != confirm) {
+            std::cerr << "Пароли не совпадают! Повторите ввод\n";
+            continue;
+        }
+        return password;
     }
-    return password;
 }
 
-// Простое хеширование пароля (XOR-based, для демонстрации)
+// Простое хеширование пароля (XOR-based)
 std::string hashPassword(const std::string& password) {
-    // В реальном приложении используйте bcrypt/Argon2
-    // Здесь простой вариант для демо
     unsigned char hash[4];
     std::memset(hash, 0, sizeof(hash));
     

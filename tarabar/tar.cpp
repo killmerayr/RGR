@@ -10,7 +10,6 @@
 using namespace std;
 
 // Создание таблицы замен для ASCII символов
-// Helpers: UTF-8 decode/encode for 1-2 byte sequences (ASCII and Cyrillic)
 static uint32_t utf8_to_cp(const vector<unsigned char>& data, size_t pos, size_t& bytes) {
     bytes = 0;
     if (pos >= data.size()) return 0;
@@ -45,13 +44,9 @@ static uint32_t toLowerCp(uint32_t cp) {
     return cp;
 }
 
-// Build encryption and decryption maps for tarabar according to user rules.
 static void buildTarabarMaps(unordered_map<uint32_t,uint32_t>& enc, unordered_map<uint32_t,uint32_t>& dec) {
     enc.clear(); dec.clear();
 
-    // --- Russian mappings ---
-    // Vowels mapping (lowercase)
-    // А Е Ё И О  -> Я Ю Э Ы У
     const vector<pair<uint32_t,uint32_t>> rusVowels = {
         {0x0430, 0x044F}, // а -> я
         {0x0435, 0x044E}, // е -> ю
@@ -61,14 +56,15 @@ static void buildTarabarMaps(unordered_map<uint32_t,uint32_t>& enc, unordered_ma
     };
     for (auto &p : rusVowels) {
         uint32_t a = p.first, b = p.second;
-        enc[a] = b; dec[b] = a;
+        enc[a] = b; enc[b] = a;  // Обе стороны для enc
+        dec[a] = b; dec[b] = a;  // Обе стороны для dec
         // uppercase
         uint32_t A = (a==0x0451?0x0401:(a - 0x20));
         uint32_t B = (b==0x0451?0x0401:(b - 0x20));
-        enc[A] = B; dec[B] = A;
+        enc[A] = B; enc[B] = A;  // Обе стороны
+        dec[A] = B; dec[B] = A;  // Обе стороны
     }
 
-    // Consonant mutual swaps (pairs)
     const vector<pair<uint32_t,uint32_t>> rusConsonantPairs = {
         {0x0431, 0x0449}, // б <-> щ
         {0x0432, 0x0448}, // в <-> ш
@@ -91,10 +87,6 @@ static void buildTarabarMaps(unordered_map<uint32_t,uint32_t>& enc, unordered_ma
         dec[L] = R; dec[R] = L;
     }
 
-    // Leave 'й'(0439), 'ъ'(044A), 'ь'(044C) untouched (both cases)
-
-    // --- English mappings (example analogous table) ---
-    // Vowels: 0x61 0x65 0x69 0x6F 0x75 -> 0x75 0x6F 0x69 0x65 0x61 (reverse)
     const vector<pair<uint32_t,uint32_t>> engVowels = {
         {0x61, 0x75}, // a -> u
         {0x65, 0x6F}, // e -> o
@@ -104,9 +96,11 @@ static void buildTarabarMaps(unordered_map<uint32_t,uint32_t>& enc, unordered_ma
     };
     for (auto &p : engVowels) {
         uint32_t a = p.first, b = p.second;
-        enc[a] = b; dec[b] = a;
+        enc[a] = b; enc[b] = a;  // Обе стороны
+        dec[a] = b; dec[b] = a;  // Обе стороны
         // uppercase
-        enc[a - 0x20] = b - 0x20; dec[b - 0x20] = a - 0x20;
+        enc[a - 0x20] = b - 0x20; enc[b - 0x20] = a - 0x20;
+        dec[a - 0x20] = b - 0x20; dec[b - 0x20] = a - 0x20;
     }
 
     // Consonant pairs for English (exclude 'y' left unchanged)
@@ -260,7 +254,6 @@ void menu_tarabar() {
     }
 }
 
-// C-style API для динамической загрузки
 extern "C" {
     void tarabarEncrypt(const string& inputPath, const string& outputPath) {
         try {
@@ -286,7 +279,6 @@ extern "C" {
             meta << hashPassword(password);
             meta.close();
             
-            cout << "✓ Файл зашифрован!\n";
         } catch (const exception& e) {
             cerr << "Ошибка при шифровании: " << e.what() << endl;
             remove(outputPath.c_str());
@@ -324,7 +316,6 @@ extern "C" {
             // Записываем выходной файл
             writeFileBinary(outputPath, decryptedBytes);
             
-            cout << "✓ Файл расшифрован!\n";
         } catch (const exception& e) {
             cerr << "Ошибка при дешифровании: " << e.what() << endl;
             remove(outputPath.c_str());

@@ -9,13 +9,14 @@ enum class MenuMode {
 enum class Algorithm {
     MatrixCipher,        // Табличная перестановка
     VigenereCipher,      // Кодовое слово
-    PlayfairCipher,      // Тарабарская грамота
+    TarabarCipher,      // Тарабарская грамота
     ExitProgram
 };
 
 enum class CryptoMode {
     Encryption,
-    Decryption
+    Decryption,
+    Cancel
 };
 
 // Функции меню
@@ -27,3 +28,5 @@ std::string getFilePath();
 std::string createModFile(const std::string& filePath, 
                          const std::string& postscript, 
                          CryptoMode action);
+void waitForEnter();
+int getValidIntInput(int minVal, int maxVal, const std::string& prompt);

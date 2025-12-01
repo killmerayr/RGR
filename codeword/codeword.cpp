@@ -9,24 +9,14 @@
 #include <unordered_set>
 #include <fstream>
 
-using std::vector;
-using std::string;
-using std::cout;
-using std::cin;
-using std::endl;
-using std::cerr;
-
 using namespace std;
 
-// Forward declarations вспомогательных функций
-// UTF-8 / codepoint helpers and table builders
 uint32_t utf8_to_cp(const string& s, size_t pos, size_t& bytes);
 string cp_to_utf8(uint32_t cp);
 uint32_t toLowerCp(uint32_t cp);
 int cyrillicCpToIndex(uint32_t cp);
 uint32_t cyrillicIndexToCp(int idx);
 
-// Substitution tables use code points (uint32_t) rather than hard-coded arrays
 vector<uint32_t> createSubstitutionTableEnglish(const string& codeWord);
 vector<uint32_t> createSubstitutionTableCyrillic(const string& codeWord);
 uint32_t encryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table);
@@ -42,7 +32,7 @@ unsigned char toLower(unsigned char c) {
     return c;
 }
 
-// Сохранение пароля в метаданных для выходного файла
+// Сохранение пароля 
 void savePasswordToFile(const std::string& filename, const std::string& password) {
     std::string metaFile = filename + ".codeword";
     std::ofstream file(metaFile);
@@ -52,7 +42,7 @@ void savePasswordToFile(const std::string& filename, const std::string& password
     file << hashPassword(password);
 }
 
-// Проверка пароля из метаданных
+// Проверка пароля 
 bool checkPasswordFromFile(const std::string& filename, const std::string& inputPassword) {
     std::string metaFile = filename + ".codeword";
     std::ifstream file(metaFile);
@@ -65,7 +55,7 @@ bool checkPasswordFromFile(const std::string& filename, const std::string& input
     return verifyPassword(inputPassword, storedHash);
 }
 
-// Проверка кодового слова (ASCII и кириллица)
+// Проверка кодового слова
 bool isValidCodeWord(const vector<unsigned char>& codeWord) {
     if (codeWord.empty()) return false;
     
@@ -101,12 +91,11 @@ bool isValidCodeWord(const vector<unsigned char>& codeWord) {
 }
 
 // Создание таблицы подстановки для английского алфавита
-// Пример: кодовое слово "мир" -> таблица: ["м", "и", "р", "а", "б", "в", ..., "я"]
 vector<uint32_t> createSubstitutionTableEnglish(const string& codeWord) {
     vector<uint32_t> table;
     unordered_set<uint32_t> used;
 
-    // Пробегаем по кодовому слову, декодируем UTF-8, добавляем английские буквы в lower-case
+    // Пробегаем по кодовому слову, декодируем UTF-8
     size_t i = 0;
     while (i < codeWord.size()) {
         size_t bytes = 0;
@@ -131,12 +120,11 @@ vector<uint32_t> createSubstitutionTableEnglish(const string& codeWord) {
 }
 
 // Создание таблицы подстановки для кириллицы
-// Пример: кодовое слово "мир" для кириллицы: ["м", "и", "р", "а", "б", "в", ..., "я"]
 vector<uint32_t> createSubstitutionTableCyrillic(const string& codeWord) {
     vector<uint32_t> table;
     unordered_set<uint32_t> used;
 
-    // Проходим кодовое слово, добавляем русские буквы (нормализованные в lower-case)
+    // Проходим кодовое слово, добавляем русские буквы 
     size_t i = 0;
     while (i < codeWord.size()) {
         size_t bytes = 0;
@@ -154,7 +142,7 @@ vector<uint32_t> createSubstitutionTableCyrillic(const string& codeWord) {
         i += (bytes > 0 ? bytes : 1);
     }
 
-    // Добавляем оставшиеся кириллические буквы по индексам (а..я с ё после е)
+    // Добавляем оставшиеся кириллические буквы по индексам 
     for (int idx = 0; idx <= 32; ++idx) {
         uint32_t cp = cyrillicIndexToCp(idx);
         if (!used.count(cp)) {
@@ -165,7 +153,6 @@ vector<uint32_t> createSubstitutionTableCyrillic(const string& codeWord) {
     return table;
 }
 
-// Шифрование одной ASCII буквы
 uint32_t encryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table) {
     bool isUpper = (cp >= 0x41 && cp <= 0x5A);
     uint32_t lower = toLower((unsigned char)cp);
@@ -181,7 +168,6 @@ uint32_t encryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table) {
 uint32_t decryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table) {
     bool isUpper = (cp >= 0x41 && cp <= 0x5A);
     uint32_t lower = toLower((unsigned char)cp);
-    // find in table
     for (int i = 0; i < (int)table.size(); ++i) {
         if (table[i] == lower) {
             uint32_t dec = (uint32_t)(0x61 + i);
@@ -194,22 +180,17 @@ uint32_t decryptCharEnglishCp(uint32_t cp, const vector<uint32_t>& table) {
 
 // Шифрование одного кириллицы символа
 uint32_t encryptCharCyrillicCp(uint32_t cp, const vector<uint32_t>& table) {
-    // remember case
     bool isUpper = false;
     uint32_t orig = cp;
-    // uppercase Cyrillic range U+0410..U+042F and U+0401 (Ё)
     if ((cp >= 0x0410 && cp <= 0x042F) || cp == 0x0401) {
         isUpper = true;
-        // convert to lowercase
         if (cp == 0x0401) cp = 0x0451; else cp = cp + 0x20;
     }
 
-    // normalize ё uppercase handled above
     uint32_t lower = toLowerCp(cp);
     int idx = cyrillicCpToIndex(lower);
     if (idx < 0 || idx >= (int)table.size()) return orig;
     uint32_t mapped = table[idx];
-    // restore case
     if (isUpper) {
         if (mapped == 0x0451) return 0x0401;
         return mapped - 0x20;
@@ -225,7 +206,6 @@ uint32_t decryptCharCyrillicCp(uint32_t cp, const vector<uint32_t>& table) {
         if (cp == 0x0401) cp = 0x0451; else cp = cp + 0x20;
     }
     uint32_t lower = toLowerCp(cp);
-    // find in table
     int found = -1;
     for (int i = 0; i < (int)table.size(); ++i) {
         if (table[i] == lower) { found = i; break; }
@@ -239,7 +219,7 @@ uint32_t decryptCharCyrillicCp(uint32_t cp, const vector<uint32_t>& table) {
     return dec;
 }
 
-// Шифрование текста (поддержка ASCII и кириллицы)
+// Шифрование текста 
 vector<unsigned char> encrypt(const vector<unsigned char>& text, const vector<unsigned char>& codeWord) {
     if (codeWord.empty()) return text;
     
@@ -309,7 +289,7 @@ vector<unsigned char> encrypt(const vector<unsigned char>& text, const vector<un
     return result;
 }
 
-// Дешифрование текста (поддержка ASCII и кириллицы)
+// Дешифрование текста 
 vector<unsigned char> decrypt(const vector<unsigned char>& text, const vector<unsigned char>& codeWord) {
     if (codeWord.empty()) return text;
     
@@ -354,8 +334,6 @@ vector<unsigned char> decrypt(const vector<unsigned char>& text, const vector<un
 
 
 // Вспомогательные функции для работы с UTF-8 и кодовыми значениями
-// Декодируем кодовую точку UTF-8 из строки s, начиная с pos.
-// Возвращаем кодовую точку и количество байт в bytes (1 или 2 for our use).
 uint32_t utf8_to_cp(const string& s, size_t pos, size_t& bytes) {
     bytes = 0;
     if (pos >= s.size()) return 0;
@@ -364,15 +342,12 @@ uint32_t utf8_to_cp(const string& s, size_t pos, size_t& bytes) {
         bytes = 1;
         return (uint32_t)c0;
     }
-    // expecting 2-byte Cyrillic
     if (pos + 1 < s.size()) {
         unsigned char c1 = (unsigned char)s[pos+1];
         bytes = 2;
-        // decode two-byte UTF-8
         uint32_t cp = ((c0 & 0x1F) << 6) | (c1 & 0x3F);
         return cp;
     }
-    // fallback
     bytes = 1;
     return (uint32_t)c0;
 }
@@ -390,7 +365,6 @@ string cp_to_utf8(uint32_t cp) {
         result.push_back((char)b2);
         return result;
     }
-    // not expected for our alphabets, but handle 3-byte
     unsigned char b1 = 0xE0 | ((cp >> 12) & 0x0F);
     unsigned char b2 = 0x80 | ((cp >> 6) & 0x3F);
     unsigned char b3 = 0x80 | (cp & 0x3F);
@@ -403,25 +377,21 @@ string cp_to_utf8(uint32_t cp) {
 
 // Нормализация в нижний регистр для ASCII и кириллицы (codepoints)
 uint32_t toLowerCp(uint32_t cp) {
-    // ASCII
     if (cp >= 0x41 && cp <= 0x5A) return cp + 0x20;
-    // Cyrillic uppercase А..Я U+0410..U+042F -> +0x20 to get lowercase
     if (cp >= 0x0410 && cp <= 0x042F) return cp + 0x20;
-    // Ё (uppercase U+0401) -> ё U+0451
     if (cp == 0x0401) return 0x0451;
     return cp;
 }
 
 // Преобразование кодовой точки кириллицы в индекс 0..32 (а..я с ё после е)
 int cyrillicCpToIndex(uint32_t cp) {
-    // expecting lowercase codepoint
     if (cp == 0x0451) return 6; // ё
-    if (cp >= 0x0430 && cp <= 0x0435) return cp - 0x0430; // а..е -> 0..5
-    if (cp >= 0x0436 && cp <= 0x044F) return 7 + (cp - 0x0436); // ж..я -> 7..
+    if (cp >= 0x0430 && cp <= 0x0435) return cp - 0x0430; 
+    if (cp >= 0x0436 && cp <= 0x044F) return 7 + (cp - 0x0436); 
     return -1;
 }
 
-// Индекс 0..32 -> кодовая точка (lowercase)
+// Индекс 0..32 -> кодовая точка 
 uint32_t cyrillicIndexToCp(int idx) {
     if (idx < 0 || idx > 32) return 0x0430;
     if (idx == 6) return 0x0451;
@@ -575,7 +545,6 @@ extern "C" {
             // Сохраняем хеш пароля в метаданные
             savePasswordToFile(outputPath, password);
             
-            cout << "✓ Файл зашифрован!\n";
         } catch (const exception& e) {
             cerr << "Ошибка при шифровании: " << e.what() << endl;
             remove(outputPath.c_str());
@@ -613,8 +582,7 @@ extern "C" {
             
             // Записываем выходной файл
             writeFileBinary(outputPath, decryptedBytes);
-            
-            cout << "✓ Файл расшифрован!\n";
+
         } catch (const exception& e) {
             cerr << "Ошибка при дешифровании: " << e.what() << endl;
             remove(outputPath.c_str());

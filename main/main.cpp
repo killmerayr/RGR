@@ -34,7 +34,7 @@ bool processLibrary(const string& libPath,
             return false;
         }
         (*encrypt)(filePath, cryptoFilePath);
-        cout << "✓ Файл зашифрован!" << endl;
+        cout << "Файл зашифрован!" << endl;
     } else {
         CryptoFunc decrypt = (CryptoFunc) dlsym(handler, decFunc.c_str());
         if (!decrypt) {
@@ -44,7 +44,7 @@ bool processLibrary(const string& libPath,
             return false;
         }
         (*decrypt)(filePath, cryptoFilePath);
-        cout << "✓ Файл расшифрован!" << endl;
+        cout << "Файл расшифрован!" << endl;
     }
 
     dlclose(handler);
@@ -56,20 +56,23 @@ int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
 
-    clearScreen();
-
     while (true) {
         showMenu(MenuMode::StartMenu);
         Algorithm userAlgorithm = getCryptoAlgorithm();
 
         if (userAlgorithm == Algorithm::ExitProgram) {
             clearScreen();
-            cout << "До свидания!\n";
+            cout << "\n";
             return 0;
         }
 
+        clearScreen();
         showMenu(MenuMode::EncDecMenu);
         CryptoMode action = getCryptoMod();
+
+        if (action == CryptoMode::Cancel) {
+            continue;
+        }
 
         string filePath = getFilePath();
         if (filePath.empty()) {
@@ -99,7 +102,7 @@ int main() {
                                         action, filePath, cryptoFilePath);
                 break;
 
-            case Algorithm::PlayfairCipher:
+            case Algorithm::TarabarCipher:
                 success = processLibrary("./lib/libTarabarCipher.so",
                                         "tarabarEncrypt", "tarabarDecrypt",
                                         action, filePath, cryptoFilePath);
@@ -112,10 +115,11 @@ int main() {
         }
 
         if (!success) {
-            cerr << "\n⚠ Ошибка при обработке файла\n";
+            cerr << "\nОшибка при обработке файла\n";
         }
 
         cout << "\n--------------------------------------\n";
+        waitForEnter();
     }
 
     return 0;

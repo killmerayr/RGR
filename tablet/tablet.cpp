@@ -167,7 +167,6 @@ void process_terminal_tablet(bool encrypt_flag) {
     cout << (encrypt_flag ? "Зашифрованный" : "Дешифрованный") << " текст:\n" << output << endl;
 }
 
-// Меню
 void menu_tablet() {
     while (true) {
         cout << "\nТабличный шифр:\n"
@@ -265,7 +264,6 @@ void menu_tablet() {
     }
 }
 
-// C-style API для динамической загрузки
 extern "C" {
     void tabletEncrypt(const string& inputPath, const string& outputPath) {
         try {
@@ -324,7 +322,6 @@ extern "C" {
             // Записываем выходной файл
             writeFileBinary(outputPath, encryptedBytes);
             
-            cout << "✓ Файл зашифрован!\n";
         } catch (const exception& e) {
             cerr << "Ошибка при шифровании: " << e.what() << endl;
             remove(outputPath.c_str());
@@ -390,7 +387,6 @@ extern "C" {
             // Записываем выходной файл
             writeFileBinary(outputPath, decryptedBytes);
             
-            cout << "✓ Файл расшифрован!\n";
         } catch (const exception& e) {
             cerr << "Ошибка при дешифровании: " << e.what() << endl;
             remove(outputPath.c_str());
